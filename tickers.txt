@@ -1,0 +1,22 @@
+# Portfolio core, benchmark, lab and watch list (the scheduled task reads these from latest.json).
+QQQ
+SMH
+AVGO
+MU
+VOO
+LULU
+KRUS
+SHAK
+MCD
+NFLX
+INTU
+DAL
+HD
+ALK
+AAL
+DASH
+# a few reference ETFs
+SPY
+IWM
+XLE
+SOXX
