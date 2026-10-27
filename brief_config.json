@@ -1,0 +1,35 @@
+{
+  "macro_symbols": {
+    "^GSPC": "SPX", "^IXIC": "COMP", "^DJI": "DJI", "^NDX": "NDX", "^RUT": "RUT", "^SOX": "SOX", "^VIX": "VIX",
+    "^IRX": "US3M", "2YY=F": "US2Y", "^FVX": "US5Y", "^TNX": "US10Y", "^TYX": "US30Y",
+    "DX-Y.NYB": "DXY", "GC=F": "GOLD", "CL=F": "WTI", "BZ=F": "BRENT", "BTC-USD": "BTC", "ETH-USD": "ETH"
+  },
+  "labels": {
+    "SPX": "标普500", "COMP": "纳斯达克综指", "DJI": "道琼斯", "NDX": "纳斯达克100", "RUT": "罗素2000", "SOX": "费城半导体",
+    "VIX": "VIX", "US3M": "3个月", "US2Y": "2年（期货）", "US5Y": "5年", "US10Y": "10年", "US30Y": "30年",
+    "DXY": "美元指数", "GOLD": "黄金（期货）", "WTI": "WTI 原油", "BRENT": "布伦特原油", "BTC": "比特币", "ETH": "以太坊"
+  },
+  "indices": ["SPX", "COMP", "DJI", "NDX", "QQQ", "RUT", "IWM", "SOX", "VIX"],
+  "rates": ["US3M", "US2Y", "US5Y", "US10Y", "US30Y"],
+  "cross_asset": ["DXY", "GOLD", "WTI", "BRENT", "BTC", "ETH"],
+  "sectors": {
+    "信息技术": "XLK", "通信服务": "XLC", "可选消费": "XLY", "金融": "XLF", "工业": "XLI", "医疗保健": "XLV",
+    "必需消费": "XLP", "能源": "XLE", "公用事业": "XLU", "材料": "XLB", "房地产": "XLRE"
+  },
+  "themes": {
+    "半导体": ["SMH", "SOXX"], "软件": ["IGV"], "网络安全": ["CIBR", "HACK"], "云计算": ["CLOU", "WCLD"],
+    "AI / 自动化": ["BOTZ", "AIQ"], "小盘成长": ["IWO"], "小盘价值": ["IWN"], "等权标普": ["RSP"],
+    "大盘成长": ["QQQ", "SCHG"], "大盘价值": ["VTV"], "标普500": ["SPY"]
+  },
+  "technicals": ["SPY", "QQQ", "IWM", "SMH", "IGV", "XLK", "XLC", "XLY"],
+  "groups": {
+    "七巨头": ["NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META", "TSLA"],
+    "AI 硬件 / 半导体": ["NVDA", "AMD", "AVGO", "MRVL", "MU", "TSM", "ASML", "ARM", "INTC", "QCOM", "SMCI", "DELL", "HPE", "ANET", "CLS", "VRT", "COHR", "LITE", "AAOI", "TSEM"],
+    "软件 / SaaS / AI 应用": ["CRM", "NOW", "SNOW", "ORCL", "ADBE", "PANW", "CRWD", "DDOG", "NET", "MDB", "PLTR", "APP", "TEAM", "WDAY", "INTU", "SHOP"],
+    "AI 电力 / 数据中心": ["CEG", "VST", "NRG", "ETN", "PWR", "GEV", "VRT", "FLNC", "OKLO", "SMR", "BE", "NEE", "SO", "DUK", "APLD", "IREN", "CORZ"]
+  },
+  "portfolio": {
+    "模拟盘核心": ["QQQ", "SMH", "AVGO", "MU", "VOO"],
+    "模拟盘实验仓 / 观察名单": ["LULU", "KRUS", "SHAK", "MCD", "NFLX", "INTU", "DAL", "HD", "ALK", "AAL", "DASH", "XYL"]
+  }
+}
