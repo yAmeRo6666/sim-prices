@@ -96,6 +96,11 @@ def read_names(path):
     return names
 
 
+def colname(c):
+    c = " ".join(str(x) for x in c) if isinstance(c, tuple) else str(c)
+    return re.sub(r"\[.*?\]", "", c).strip()
+
+
 def refresh_universe(today):
     if os.path.exists("sp500.csv") and os.path.exists("ndx.csv") and today.weekday() != 0:
         return
@@ -104,11 +109,12 @@ def refresh_universe(today):
         for url, path, minimum in (("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", "sp500.csv", 480),
                                    ("https://en.wikipedia.org/wiki/Nasdaq-100", "ndx.csv", 95)):
             html = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8")
-            best = {}
+            best, seen = {}, []
             for tb in pd.read_html(io.StringIO(html)):
-                cols = [str(c).strip() for c in tb.columns]
-                tcol = next((c for c in tb.columns if str(c).strip() in ("Symbol", "Ticker")), None)
-                ncol = next((c for c in tb.columns if str(c).strip() in ("Security", "Company")), None)
+                cols = {c: colname(c) for c in tb.columns}
+                seen.append((len(tb), list(cols.values())[:4]))
+                tcol = next((c for c, n in cols.items() if n.split(" ")[0] in ("Symbol", "Ticker")), None)
+                ncol = next((c for c, n in cols.items() if n.split(" ")[0] in ("Security", "Company", "Name")), None)
                 if tcol is None or len(tb) < minimum:
                     continue
                 for _, row in tb.iterrows():
@@ -121,6 +127,8 @@ def refresh_universe(today):
                     for t in sorted(best):
                         w.writerow([t, best[t]])
                 print(f"{path}: {len(best)} tickers")
+            else:
+                print(f"{path}: not refreshed, only {len(best)} tickers found; tables seen {seen}")
     except Exception as e:
         print(f"universe refresh failed, keeping the old lists: {e}", file=sys.stderr)
 
@@ -131,6 +139,8 @@ def r4(x):
 
 
 def yahoo(symbols, period="1y"):
+    import warnings
+    warnings.filterwarnings("ignore")
     import pandas as pd
     import yfinance as yf
     out = {}
@@ -171,7 +181,25 @@ def yahoo(symbols, period="1y"):
             if got >= max(1, len(chunk) // 2):
                 break
             time.sleep(30)
+    retry = [t for t in symbols if t not in out]
+    if retry and len(retry) <= 40 and not getattr(yahoo, "_retrying", False):
+        yahoo._retrying = True                          # e.g. "database is locked" from the threaded download
+        try:
+            time.sleep(5)
+            out.update(yahoo(retry, period))
+        finally:
+            yahoo._retrying = False
     return out
+
+
+def merge_rows(*lists):
+    """Merge bar lists by date; later lists win field by field (None never overwrites a value)."""
+    by = {}
+    for rows in lists:
+        for r in rows or []:
+            cur = by.setdefault(r["date"], {})
+            cur.update({k: v for k, v in r.items() if v is not None})
+    return [by[d] for d in sorted(by)]
 
 
 def stooq(t):
@@ -386,8 +414,25 @@ def main(now_ny=None):
         extra += list(cfg["sectors"].values()) + cfg["technicals"] + [t for t in cfg["indices"] if TICKER_RE.match(t) and t not in aliases]
     tickers = list(dict.fromkeys(CORE + read_list("tickers.txt") + [t for t in extra if TICKER_RE.match(t)] + universe))
     macro = (cfg or {}).get("macro_symbols", {})
-    raw = yahoo(tickers + list(macro))
+    syms = tickers + list(macro)
+    long_, recent = yahoo(syms, "1y"), yahoo(syms, "1mo")   # Yahoo's 1y series can lag a day behind the 1mo one
+    diag = {t: {"1y": (long_.get(t) or [{}])[-1].get("date"), "1mo": (recent.get(t) or [{}])[-1].get("date")}
+            for t in ("QQQ", "AAPL", "^GSPC", "^TNX")}
+    print("last bar by download:", diag)
+    raw = {t: merge_rows(long_.get(t), recent.get(t)) for t in set(long_) | set(recent)}
     data = {t: rows for t, rows in raw.items() if t in tickers}
+    try:
+        prev = json.load(open("latest.json", encoding="utf-8")).get("tickers", {})
+    except Exception:
+        prev = {}
+    kept = 0
+    for t, rows in prev.items():                        # never lose a confirmed bar the previous run had
+        if t in data and rows and rows[-1]["date"] > data[t][-1]["date"]:
+            kept += 1
+        if t in data:
+            data[t] = merge_rows(rows, data[t])
+    if kept:
+        print(f"kept newer bars from the previous latest.json for {kept} tickers")
     sources = {t: "yahoo" for t in data}
     for t in read_list("tickers.txt") + CORE:          # fallback for the names we really need
         if t not in data or data[t][-1]["date"] < ft:
