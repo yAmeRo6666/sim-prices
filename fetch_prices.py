@@ -106,9 +106,19 @@ def refresh_universe(today):
         return
     try:
         import pandas as pd
-        for url, path, minimum in (("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", "sp500.csv", 480),
-                                   ("https://en.wikipedia.org/wiki/Nasdaq-100", "ndx.csv", 95)):
-            html = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8")
+        sources = (("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", "sp500.csv", 480),
+                   ("https://en.wikipedia.org/wiki/Nasdaq-100", "ndx.csv", 95),
+                   ("https://en.wikipedia.org/wiki/List_of_Nasdaq-100_companies", "ndx.csv", 95),
+                   ("https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies", "ndx.csv", 95))
+        done = set()
+        for url, path, minimum in sources:
+            if path in done:
+                continue
+            try:
+                html = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8")
+            except Exception as e:
+                print(f"{path}: {url} failed: {e}")
+                continue
             best, seen = {}, []
             for tb in pd.read_html(io.StringIO(html)):
                 cols = {c: colname(c) for c in tb.columns}
@@ -126,9 +136,10 @@ def refresh_universe(today):
                     w = csv.writer(f)
                     for t in sorted(best):
                         w.writerow([t, best[t]])
-                print(f"{path}: {len(best)} tickers")
+                print(f"{path}: {len(best)} tickers from {url}")
+                done.add(path)
             else:
-                print(f"{path}: not refreshed, only {len(best)} tickers found; tables seen {seen}")
+                print(f"{path}: {url} gave only {len(best)} tickers; tables seen {seen[:6]}")
     except Exception as e:
         print(f"universe refresh failed, keeping the old lists: {e}", file=sys.stderr)
 
@@ -314,7 +325,12 @@ def fpos(v):
 
 
 def render(market, cfg, names):
-    st, lab = market["assets"], cfg["labels"]
+    allst, lab, ft = market["assets"], cfg["labels"], market["final_through"]
+    st = {t: s for t, s in allst.items() if s.get("date") == ft}    # a stale bar is never shown as today's
+
+    def na(t):
+        s = allst.get(t)
+        return f"暂无可靠数据（最新 {s['date'][5:]}）" if s else "暂无可靠数据"
     L = [f"# 行情数据表｜{market['final_through']}",
          f"数据：Yahoo Finance，由 GitHub Actions 在 {market['generated_at']} 生成；均为收盘后确认的日线数据。",
          "宽度只统计标普500 和纳指100 成分股（不是 NYSE/Nasdaq 全市场）。", ""]
@@ -326,7 +342,7 @@ def render(market, cfg, names):
     for t in cfg["indices"]:
         s = st.get(t)
         if not s:
-            L.append(f"| {name(t)} | 暂无可靠数据 |||||||||")
+            L.append(f"| {name(t)} | {na(t)} |||||||||")
             continue
         tag = "52周新高" if s["new_high"] else ("52周新低" if s["new_low"] else "")
         L.append(f"| {name(t)} ({t}) | {fp(s['close'])} | {fpct(s['chg1d'])} | {fp(s['high'])}/{fp(s['low'])} | "
@@ -338,7 +354,7 @@ def render(market, cfg, names):
             five = None if s.get("chg5d") is None else s["close"] - s["close"] / (1 + s["chg5d"])
             L.append(f"| {name(t)} | {fp(s['close'], 3)} | {(s['close'] - s['prev']) * 100:+.1f}bp | {'—' if five is None else f'{five * 100:+.1f}bp'} |")
         else:
-            L.append(f"| {name(t)} | 暂无可靠数据 | | |")
+            L.append(f"| {name(t)} | {na(t)} | | |")
     y2, y10, y30 = (st.get(k) for k in ("US2Y", "US10Y", "US30Y"))
     if y2 and y10:
         L.append(f"| 2Y-10Y 利差 | {(y10['close'] - y2['close']) * 100:+.0f}bp | {((y10['close'] - y10['prev']) - (y2['close'] - y2['prev'])) * 100:+.1f}bp | |")
@@ -347,7 +363,7 @@ def render(market, cfg, names):
     L += ["", "## 表3 美元、黄金、原油、加密", "| 资产 | 最新 | 1日 | 5日 | 1月 |", "|---|---|---|---|---|"]
     for t in cfg["cross_asset"]:
         s = st.get(t)
-        L.append(f"| {name(t)} | {fp(s['close'])} | {fpct(s['chg1d'])} | {fpct(s['chg5d'])} | {fpct(s['chg1m'])} |" if s else f"| {name(t)} | 暂无可靠数据 | | | |")
+        L.append(f"| {name(t)} | {fp(s['close'])} | {fpct(s['chg1d'])} | {fpct(s['chg5d'])} | {fpct(s['chg1m'])} |" if s else f"| {name(t)} | {na(t)} | | | |")
     spy = st.get("SPY") or {}
     rows = []
     for zh, t in cfg["sectors"].items():
@@ -363,7 +379,7 @@ def render(market, cfg, names):
     for zh, ts in cfg["themes"].items():
         for t in ts:
             s = st.get(t)
-            L.append(f"| {zh} | {t} | {fpct(s['chg1d'])} | {fpct(s['chg5d'])} | {fpct(s['chg1m'])} |" if s else f"| {zh} | {t} | 暂无可靠数据 | | |")
+            L.append(f"| {zh} | {t} | {fpct(s['chg1d'])} | {fpct(s['chg5d'])} | {fpct(s['chg1m'])} |" if s else f"| {zh} | {t} | {na(t)} | | |")
     L += ["", "## 表6 市场宽度（成分股）", "| 指标 | 标普500 | 纳指100 |", "|---|---|---|"]
     b1, b2 = market["breadth"].get("sp500") or {}, market["breadth"].get("ndx") or {}
     for key, zh in (("adv", "上涨家数"), ("dec", "下跌家数"), ("new_highs", "52周新高"), ("new_lows", "52周新低")):
@@ -374,7 +390,7 @@ def render(market, cfg, names):
     for t in cfg["technicals"]:
         s = st.get(t)
         if not s:
-            L.append(f"| {t} | 暂无可靠数据 ||||||||")
+            L.append(f"| {t} | {na(t)} ||||||||")
             continue
         macd = "—" if s.get("macd") is None else ("多头" if s["macd"] > s["macd_signal"] else "空头")
         L.append(f"| {t} | {fp(s['close'])} | {fp(s['ma20'])} | {fp(s['ma50'])} | {fp(s['ma100'])} | {fp(s['ma200'])} | "
@@ -390,7 +406,7 @@ def render(market, cfg, names):
         for t in ts:
             s = st.get(t)
             if not s:
-                L.append(f"| {grp} | {t} | 暂无可靠数据 |||||||")
+                L.append(f"| {grp} | {t} | {na(t)} |||||||")
                 continue
             tag = "52周新高" if s["new_high"] else ("52周新低" if s["new_low"] else "")
             L.append(f"| {grp} | {t} | {fp(s['close'])} | {fpct(s['chg1d'])} | {fpct(s['chg5d'])} | {fpos(s['vs_ma20'])} | "
@@ -405,7 +421,7 @@ def main(now_ny=None):
     refresh_universe(now_ny.date())
     sp500, ndx = read_names("sp500.csv"), read_names("ndx.csv")
     names = {**ndx, **sp500}
-    universe = list(sp500) + [t for t in ndx if t not in sp500] or read_list("universe.txt")
+    universe = list(dict.fromkeys(list(sp500) + list(ndx) + read_list("universe.txt")))
     extra = []
     if cfg:
         for v in list(cfg["groups"].values()) + list(cfg["portfolio"].values()) + list(cfg["themes"].values()):
