@@ -436,8 +436,8 @@ def main(now_ny=None):
         if group:
             long_.update(yahoo(group, "1y"))
             recent.update(yahoo(group, "1mo"))          # Yahoo's 1y series can lag a day behind the 1mo one
-    diag = {t: {"1y": (long_.get(t) or [{}])[-1].get("date"), "1mo": (recent.get(t) or [{}])[-1].get("date")}
-            for t in ("QQQ", "AAPL", "^GSPC", "^TNX")}
+    diag = {t: {"1y": [r["date"] for r in (long_.get(t) or [])[-3:]], "1mo": [r["date"] for r in (recent.get(t) or [])[-3:]]}
+            for t in ("QQQ", "XLK", "^GSPC", "2YY=F", "BTC-USD")}
     print("last bar by download:", diag)
     raw = {t: merge_rows(long_.get(t), recent.get(t)) for t in set(long_) | set(recent)}
     data = {t: rows for t, rows in raw.items() if t in tickers}
