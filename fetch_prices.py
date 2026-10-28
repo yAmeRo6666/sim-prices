@@ -430,8 +430,11 @@ def main(now_ny=None):
         extra += list(cfg["sectors"].values()) + cfg["technicals"] + [t for t in cfg["indices"] if TICKER_RE.match(t) and t not in aliases]
     tickers = list(dict.fromkeys(CORE + read_list("tickers.txt") + [t for t in extra if TICKER_RE.match(t)] + universe))
     macro = (cfg or {}).get("macro_symbols", {})
-    syms = tickers + list(macro)
-    long_, recent = yahoo(syms, "1y"), yahoo(syms, "1mo")   # Yahoo's 1y series can lag a day behind the 1mo one
+    long_, recent = {}, {}
+    for group in (tickers, list(macro)):                # macro apart: mixing time zones in one download shifts dates
+        if group:
+            long_.update(yahoo(group, "1y"))
+            recent.update(yahoo(group, "1mo"))          # Yahoo's 1y series can lag a day behind the 1mo one
     diag = {t: {"1y": (long_.get(t) or [{}])[-1].get("date"), "1mo": (recent.get(t) or [{}])[-1].get("date")}
             for t in ("QQQ", "AAPL", "^GSPC", "^TNX")}
     print("last bar by download:", diag)
