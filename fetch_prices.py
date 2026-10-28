@@ -382,7 +382,8 @@ def main(now_ny=None):
     if cfg:
         for v in list(cfg["groups"].values()) + list(cfg["portfolio"].values()) + list(cfg["themes"].values()):
             extra += v
-        extra += list(cfg["sectors"].values()) + cfg["technicals"] + [t for t in cfg["indices"] if TICKER_RE.match(t)]
+        aliases = set(cfg.get("macro_symbols", {}).values())
+        extra += list(cfg["sectors"].values()) + cfg["technicals"] + [t for t in cfg["indices"] if TICKER_RE.match(t) and t not in aliases]
     tickers = list(dict.fromkeys(CORE + read_list("tickers.txt") + [t for t in extra if TICKER_RE.match(t)] + universe))
     macro = (cfg or {}).get("macro_symbols", {})
     raw = yahoo(tickers + list(macro))
