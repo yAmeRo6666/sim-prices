@@ -431,7 +431,8 @@ def main(now_ny=None):
     tickers = list(dict.fromkeys(CORE + read_list("tickers.txt") + [t for t in extra if TICKER_RE.match(t)] + universe))
     macro = (cfg or {}).get("macro_symbols", {})
     long_, recent = {}, {}
-    for group in (tickers, list(macro)):                # macro apart: mixing time zones in one download shifts dates
+    crypto = [m for m in macro if m.endswith("-USD")]
+    for group in (tickers, [m for m in macro if m not in crypto], crypto):   # one time zone per download, else dates shift
         if group:
             long_.update(yahoo(group, "1y"))
             recent.update(yahoo(group, "1mo"))          # Yahoo's 1y series can lag a day behind the 1mo one
