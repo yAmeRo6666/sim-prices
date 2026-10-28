@@ -29,7 +29,7 @@ jobs:
         run: |
           git config user.name "price-bot"
           git config user.email "price-bot@users.noreply.github.com"
-          for f in latest.json market.json brief_tables.md tables sp500.csv ndx.csv run_log.txt; do [ -e "$f" ] && git add "$f"; done
+          for f in latest.json market.json brief_tables.md tables sp500.csv ndx.csv run_log.txt thermo_history.csv; do [ -e "$f" ] && git add "$f"; done
           if git diff --cached --quiet; then exit 0; fi
           git commit -m "prices $(date -u +%Y-%m-%dT%H:%MZ)"
           git pull --rebase --quiet

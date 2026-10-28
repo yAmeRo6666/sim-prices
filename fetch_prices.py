@@ -7,6 +7,8 @@ Outputs (all from Yahoo Finance; Stooq as a fallback for the names in tickers.tx
   market.json      computed market data for the daily market brief: indices, rates, cross-asset, sectors, themes,
                     technicals, breadth (S&P 500 / Nasdaq-100), top movers, watch groups (see brief_config.json).
   brief_tables.md  the same numbers as ready-made Chinese markdown tables.
+  market.json also carries "screens" (one-day drops <= -8%, new / near 52-week closing lows among S&P 500 + Nasdaq-100:
+  the satellite's candidate lists) and "thermo" (macro risk gauges); thermo_history.csv keeps one thermo row per day.
 
 Only bars dated <= final_through are used. final_through is today (New York time) once it is 16:20 or later on an
 NYSE trading day, otherwise the previous trading day — so an intraday bar never leaves this script.
@@ -289,7 +291,64 @@ def stats(rows):
     s["new_high"] = bool(prior_hi and (last.get("high") or last["close"]) > prior_hi and len(rows) >= 120)
     s["new_low"] = bool(prior_lo and (last.get("low") or last["close"]) < prior_lo and len(rows) >= 120)
     s["hi20"], s["lo20"] = max(hi[-20:]), min(lo[-20:])
+    prior_c = c[-252:-1]
+    s["lo52c"] = min(prior_c) if prior_c else None                       # lowest prior CLOSE of the last 52 weeks
+    s["new_low_close"] = bool(prior_c and c[-1] < min(prior_c) and len(rows) >= 120)
     return s
+
+
+def screens(members, st, ft, names, drop=-0.08, near=0.03):
+    """Candidate lists for the paper portfolio's satellite: big one-day drops and new / near 52-week closing lows."""
+    rows = [(t, st[t]) for t in members if st.get(t) and st[t]["date"] == ft and st[t]["close"] > 5 and st[t]["chg1d"] is not None]
+
+    def entry(t, s):
+        return {"t": t, "name": names.get(t, ""), "close": round(s["close"], 2), "chg1d": round(s["chg1d"], 4),
+                "chg5d": None if s["chg5d"] is None else round(s["chg5d"], 4), "vol_ratio": None if s["vol_ratio"] is None else round(s["vol_ratio"], 2),
+                "lo52": round(s["lo52"], 2), "vs_lo52c": None if not s.get("lo52c") else round(pct(s["close"], s["lo52c"]), 4),
+                "rsi14": None if s["rsi14"] is None else round(s["rsi14"])}
+    drops = sorted([(t, s) for t, s in rows if s["chg1d"] <= drop], key=lambda x: x[1]["chg1d"])
+    lows = sorted([(t, s) for t, s in rows if s.get("new_low_close")], key=lambda x: x[1]["chg1d"])
+    nears = sorted([(t, s) for t, s in rows if not s.get("new_low_close") and s.get("lo52c") and s["close"] <= s["lo52c"] * (1 + near)],
+                   key=lambda x: x[1]["close"] / x[1]["lo52c"])
+    return {"date": ft, "rules": {"drops": f"chg1d <= {drop:.0%}", "new_lows": "close below every close of the prior 52 weeks",
+                                  "near_lows": f"close within {near:.0%} of the prior 52-week closing low"},
+            "drops": [entry(t, s) for t, s in drops[:30]], "new_lows": [entry(t, s) for t, s in lows[:30]],
+            "near_lows": [entry(t, s) for t, s in nears[:30]]}
+
+
+def thermometer(st, br, ft):
+    """Macro risk gauges for the portfolio's quarterly review (only values dated final_through)."""
+    def g(t):
+        s = st.get(t)
+        return s if s and s["date"] == ft else None
+    y, w, dx, smh, qqq, vix = (g(k) for k in ("US10Y", "WTI", "DXY", "SMH", "QQQ", "VIX"))
+    th = {"date": ft,
+          "us10y": None if not y else round(y["close"], 3),
+          "us10y_5d_bp": None if not y or y["chg5d"] is None else round((y["close"] - y["close"] / (1 + y["chg5d"])) * 100, 1),
+          "wti": None if not w else round(w["close"], 2), "wti_1m": None if not w or w["chg1m"] is None else round(w["chg1m"], 4),
+          "dxy_1m": None if not dx or dx["chg1m"] is None else round(dx["chg1m"], 4),
+          "smh_qqq_1m": None if not smh or not qqq or smh["chg1m"] is None or qqq["chg1m"] is None else round(smh["chg1m"] - qqq["chg1m"], 4),
+          "sp500_above_ma50": None if not br.get("sp500") else round(br["sp500"]["above_ma50"], 4),
+          "ndx_above_ma50": None if not br.get("ndx") else round(br["ndx"]["above_ma50"], 4),
+          "vix": None if not vix else round(vix["close"], 2)}
+    return th
+
+
+THERMO_COLS = ["date", "us10y", "us10y_5d_bp", "wti", "wti_1m", "dxy_1m", "smh_qqq_1m", "sp500_above_ma50", "ndx_above_ma50", "vix"]
+
+
+def append_thermo(th, path="thermo_history.csv"):
+    rows = {}
+    if os.path.exists(path):
+        for r in csv.DictReader(open(path, encoding="utf-8")):
+            if r.get("date"):
+                rows[r["date"]] = r
+    rows[th["date"]] = {k: ("" if th.get(k) is None else th[k]) for k in THERMO_COLS}
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=THERMO_COLS)
+        w.writeheader()
+        for d in sorted(rows):
+            w.writerow({k: rows[d].get(k, "") for k in THERMO_COLS})
 
 
 def breadth(members, st, ft):
@@ -338,6 +397,22 @@ def render(market, cfg, names):
     def name(t):
         return lab.get(t) or names.get(t) or t
 
+    th = market.get("thermo") or {}
+    if th:
+        tl = []
+        if th.get("us10y") is not None:
+            tl.append(f"10年期 {th['us10y']:.2f}%" + (f"（5日 {th['us10y_5d_bp']:+.0f}bp）" if th.get("us10y_5d_bp") is not None else ""))
+        if th.get("wti") is not None:
+            tl.append(f"WTI ${th['wti']:,.0f}" + (f"（1月 {th['wti_1m'] * 100:+.0f}%）" if th.get("wti_1m") is not None else ""))
+        if th.get("dxy_1m") is not None:
+            tl.append(f"美元 1月 {th['dxy_1m'] * 100:+.1f}%")
+        if th.get("smh_qqq_1m") is not None:
+            tl.append(f"SMH−QQQ 1月 {th['smh_qqq_1m'] * 100:+.1f}pp")
+        if th.get("sp500_above_ma50") is not None:
+            tl.append(f"标普500 高于50日线 {th['sp500_above_ma50'] * 100:.0f}%")
+        if th.get("vix") is not None:
+            tl.append(f"VIX {th['vix']:.1f}")
+        L += ["风险温度计：" + "｜".join(tl) + "（历史见 thermo_history.csv）", ""]
     L += ["## 表1 大盘", "| 指数 | 收盘 | 涨跌 | 日内高/低 | 量比 | 20日线 | 50日线 | 200日线 | RSI | 状态 |", "|---|---|---|---|---|---|---|---|---|---|"]
     for t in cfg["indices"]:
         s = st.get(t)
@@ -411,6 +486,19 @@ def render(market, cfg, names):
             tag = "52周新高" if s["new_high"] else ("52周新低" if s["new_low"] else "")
             L.append(f"| {grp} | {t} | {fp(s['close'])} | {fpct(s['chg1d'])} | {fpct(s['chg5d'])} | {fpos(s['vs_ma20'])} | "
                      f"{fpct(pct(s['close'], s['hi52']), 1)} | {fp(s['rsi14'], 0)} | {tag} |")
+    sc = market.get("screens") or {}
+    if sc:
+        L += ["", "## 表10 候选筛选（标普500 + 纳指100，股价 > $5；模拟盘机动仓的候选来源）"]
+        for title, key in (("单日跌幅 ≥ 8%", "drops"), ("收盘创 52 周新低", "new_lows"), ("距 52 周最低收盘 ≤ 3%", "near_lows")):
+            items = sc.get(key) or []
+            L += [f"**{title}**（{len(items)} 只）"]
+            if items:
+                L += ["| 代码 | 公司 | 收盘 | 1日 | 5日 | 量比 | 距52周最低收盘 | RSI |", "|---|---|---|---|---|---|---|---|"]
+                for e in items[:15]:
+                    L.append(f"| {e['t']} | {e['name']} | {fp(e['close'])} | {fpct(e['chg1d'])} | {fpct(e['chg5d'])} | {fp(e['vol_ratio'])} | "
+                             f"{fpct(e['vs_lo52c'], 1)} | {fp(e['rsi14'], 0)} |")
+            else:
+                L.append("无")
     return "\n".join(L) + "\n"
 
 
@@ -480,9 +568,14 @@ def main(now_ny=None):
     movers = [t for t in set(sp500) | set(ndx) if st.get(t) and st[t]["date"] == ft and st[t]["close"] > 5 and st[t]["chg1d"] is not None]
     movers.sort(key=lambda t: st[t]["chg1d"])
     keep = set(extra) | set(macro.values()) | set(movers[:10]) | set(movers[-10:]) | set(read_list("tickers.txt"))
+    br = {"sp500": breadth(sp500, st, ft), "ndx": breadth(ndx, st, ft)}
+    sc = screens(set(sp500) | set(ndx), st, ft, names)
+    th = thermometer(st, br, ft)
+    append_thermo(th)
+    keep |= {e["t"] for key in ("drops", "new_lows", "near_lows") for e in sc[key]}
     market = {"generated_at": gen, "final_through": ft,
               "assets": {t: rnd(st[t]) for t in sorted(keep) if st.get(t)},
-              "breadth": {"sp500": breadth(sp500, st, ft), "ndx": breadth(ndx, st, ft)},
+              "breadth": br, "thermo": th, "screens": sc,
               "movers": {"gainers": list(reversed(movers[-10:])), "losers": movers[:10]},
               "names": {t: names.get(t, "") for t in sorted(keep) if names.get(t)}}
     with open("market.json", "w", encoding="utf-8") as f:
@@ -492,7 +585,8 @@ def main(now_ny=None):
     for path in ("brief_tables.md", os.path.join("tables", ft + ".md")):
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
-    print(f"market.json: {len(market['assets'])} assets; breadth sp500 {market['breadth']['sp500'] and market['breadth']['sp500']['n']}")
+    print(f"market.json: {len(market['assets'])} assets; breadth sp500 {market['breadth']['sp500'] and market['breadth']['sp500']['n']}; "
+          f"screens drops {len(sc['drops'])} new_lows {len(sc['new_lows'])} near_lows {len(sc['near_lows'])}; thermo {th}")
 
 
 if __name__ == "__main__":
