@@ -297,8 +297,8 @@ def stats(rows):
     return s
 
 
-def screens(members, st, ft, names, drop=-0.08, near=0.03):
-    """Candidate lists for the paper portfolio's satellite: big one-day drops and new / near 52-week closing lows."""
+def screens(members, st, ft, names, drop=-0.08, near=0.03, drop5=-0.10):
+    """Candidate lists for the paper portfolio's satellite: big one-day drops, big five-day drops, new / near 52-week closing lows."""
     rows = [(t, st[t]) for t in members if st.get(t) and st[t]["date"] == ft and st[t]["close"] > 5 and st[t]["chg1d"] is not None]
 
     def entry(t, s):
@@ -307,13 +307,15 @@ def screens(members, st, ft, names, drop=-0.08, near=0.03):
                 "lo52": round(s["lo52"], 2), "vs_lo52c": None if not s.get("lo52c") else round(pct(s["close"], s["lo52c"]), 4),
                 "rsi14": None if s["rsi14"] is None else round(s["rsi14"])}
     drops = sorted([(t, s) for t, s in rows if s["chg1d"] <= drop], key=lambda x: x[1]["chg1d"])
+    drops5 = sorted([(t, s) for t, s in rows if s["chg1d"] > drop and s["chg5d"] is not None and s["chg5d"] <= drop5], key=lambda x: x[1]["chg5d"])
     lows = sorted([(t, s) for t, s in rows if s.get("new_low_close")], key=lambda x: x[1]["chg1d"])
     nears = sorted([(t, s) for t, s in rows if not s.get("new_low_close") and s.get("lo52c") and s["close"] <= s["lo52c"] * (1 + near)],
                    key=lambda x: x[1]["close"] / x[1]["lo52c"])
-    return {"date": ft, "rules": {"drops": f"chg1d <= {drop:.0%}", "new_lows": "close below every close of the prior 52 weeks",
+    return {"date": ft, "rules": {"drops": f"chg1d <= {drop:.0%}", "drops_5d": f"chg5d <= {drop5:.0%} (and not in drops)",
+                                  "new_lows": "close below every close of the prior 52 weeks",
                                   "near_lows": f"close within {near:.0%} of the prior 52-week closing low"},
-            "drops": [entry(t, s) for t, s in drops[:30]], "new_lows": [entry(t, s) for t, s in lows[:30]],
-            "near_lows": [entry(t, s) for t, s in nears[:30]]}
+            "drops": [entry(t, s) for t, s in drops[:30]], "drops_5d": [entry(t, s) for t, s in drops5[:30]],
+            "new_lows": [entry(t, s) for t, s in lows[:30]], "near_lows": [entry(t, s) for t, s in nears[:30]]}
 
 
 def thermometer(st, br, ft):
@@ -489,7 +491,7 @@ def render(market, cfg, names):
     sc = market.get("screens") or {}
     if sc:
         L += ["", "## 表10 候选筛选（标普500 + 纳指100，股价 > $5；模拟盘机动仓的候选来源）"]
-        for title, key in (("单日跌幅 ≥ 8%", "drops"), ("收盘创 52 周新低", "new_lows"), ("距 52 周最低收盘 ≤ 3%", "near_lows")):
+        for title, key in (("单日跌幅 ≥ 8%", "drops"), ("5 日跌幅 ≥ 10%（不含上表）", "drops_5d"), ("收盘创 52 周新低", "new_lows"), ("距 52 周最低收盘 ≤ 3%", "near_lows")):
             items = sc.get(key) or []
             L += [f"**{title}**（{len(items)} 只）"]
             if items:
@@ -572,7 +574,7 @@ def main(now_ny=None):
     sc = screens(set(sp500) | set(ndx), st, ft, names)
     th = thermometer(st, br, ft)
     append_thermo(th)
-    keep |= {e["t"] for key in ("drops", "new_lows", "near_lows") for e in sc[key]}
+    keep |= {e["t"] for key in ("drops", "drops_5d", "new_lows", "near_lows") for e in sc[key]}
     market = {"generated_at": gen, "final_through": ft,
               "assets": {t: rnd(st[t]) for t in sorted(keep) if st.get(t)},
               "breadth": br, "thermo": th, "screens": sc,
@@ -586,7 +588,7 @@ def main(now_ny=None):
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
     print(f"market.json: {len(market['assets'])} assets; breadth sp500 {market['breadth']['sp500'] and market['breadth']['sp500']['n']}; "
-          f"screens drops {len(sc['drops'])} new_lows {len(sc['new_lows'])} near_lows {len(sc['near_lows'])}; thermo {th}")
+          f"screens drops {len(sc['drops'])} drops_5d {len(sc['drops_5d'])} new_lows {len(sc['new_lows'])} near_lows {len(sc['near_lows'])}; thermo {th}")
 
 
 if __name__ == "__main__":
