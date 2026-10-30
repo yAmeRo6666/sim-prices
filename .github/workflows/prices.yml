@@ -29,7 +29,7 @@ jobs:
         run: |
           git config user.name "price-bot"
           git config user.email "price-bot@users.noreply.github.com"
-          FILES="latest.json market.json brief_tables.md tables sp500.csv ndx.csv run_log.txt thermo_history.csv"
+          FILES="latest.json market.json brief_tables.md tables sp500.csv ndx.csv run_log.txt thermo_history.csv screen_log.csv screen_returns.md screen_returns.json"
           stage() { for f in $FILES; do [ -e "$f" ] && git add "$f"; done; }
           stage
           if git diff --cached --quiet; then exit 0; fi

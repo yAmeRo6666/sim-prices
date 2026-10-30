@@ -9,6 +9,7 @@ Outputs (all from Yahoo Finance; Stooq as a fallback for the names in tickers.tx
   brief_tables.md  the same numbers as ready-made Chinese markdown tables.
   market.json also carries "screens" (one-day drops <= -8%, new / near 52-week closing lows among S&P 500 + Nasdaq-100:
   the satellite's candidate lists) and "thermo" (macro risk gauges); thermo_history.csv keeps one thermo row per day.
+  screen_log.csv logs every screen hit; screen_returns.md/json measure their forward excess returns vs SPY (5/21/63/126 days).
 
 Only bars dated <= final_through are used. final_through is today (New York time) once it is 16:20 or later on an
 NYSE trading day, otherwise the previous trading day — so an intraday bar never leaves this script.
@@ -336,6 +337,89 @@ def thermometer(st, br, ft):
     return th
 
 
+SCREEN_COLS = ["date", "list", "t", "close", "chg1d", "chg5d", "spy"]
+HORIZONS = (5, 21, 63, 126)
+
+
+def log_screens(sc, st, ft, path="screen_log.csv"):
+    """Append today's screen hits (one row per list × ticker) so their forward returns can be measured later."""
+    rows = {}
+    if os.path.exists(path):
+        for r in csv.DictReader(open(path, encoding="utf-8")):
+            if r.get("date") and r.get("list") and r.get("t"):
+                rows[(r["date"], r["list"], r["t"])] = r
+    spy = st.get("SPY")
+    spy_c = spy["close"] if spy and spy["date"] == ft else ""
+    for key in ("drops", "drops_5d", "new_lows", "near_lows"):
+        for e in sc.get(key) or []:
+            rows[(ft, key, e["t"])] = {"date": ft, "list": key, "t": e["t"], "close": e["close"],
+                                       "chg1d": e["chg1d"], "chg5d": "" if e["chg5d"] is None else e["chg5d"], "spy": spy_c}
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=SCREEN_COLS)
+        w.writeheader()
+        for k in sorted(rows):
+            w.writerow({c: rows[k].get(c, "") for c in SCREEN_COLS})
+    return rows
+
+
+def screen_returns(log_rows, final, ft):
+    """Forward excess returns (vs SPY) of every logged hit, at HORIZONS trading days after the hit, from the 1-year bars.
+    Returns (per-hit list, summary by list)."""
+    def closes(t):
+        return {r["date"]: r["close"] for r in final.get(t) or []}
+    spy = closes("SPY")
+    spy_days = sorted(spy)
+    hits, summary = [], {}
+    for (d, lst, t), r in sorted(log_rows.items()):
+        c = closes(t)
+        if d not in c or d not in spy:
+            continue
+        days = sorted(k for k in spy_days if k >= d and k in c)       # trading days where both have a close
+        h = {"date": d, "list": lst, "t": t, "close": c[d]}
+        for n in HORIZONS:
+            if len(days) > n:
+                dn = days[n]
+                h[f"r{n}"] = round(c[dn] / c[d] - 1, 4)
+                h[f"x{n}"] = round((c[dn] / c[d]) - (spy[dn] / spy[d]), 4)   # excess over SPY, same window
+            else:
+                h[f"r{n}"] = h[f"x{n}"] = None
+        hits.append(h)
+    for lst in ("drops", "drops_5d", "new_lows", "near_lows"):
+        row = {"hits": sum(1 for h in hits if h["list"] == lst)}
+        for n in HORIZONS:
+            xs = [h[f"x{n}"] for h in hits if h["list"] == lst and h[f"x{n}"] is not None]
+            row[f"n{n}"] = len(xs)
+            row[f"mean_x{n}"] = round(sum(xs) / len(xs), 4) if xs else None
+            srt = sorted(xs)
+            row[f"median_x{n}"] = round(srt[len(srt) // 2], 4) if xs else None
+            row[f"win{n}"] = round(sum(1 for x in xs if x > 0) / len(xs), 3) if xs else None
+        summary[lst] = row
+    return hits, summary
+
+
+def render_screen_returns(summary, hits, ft):
+    zh = {"drops": "单日跌 ≥8%", "drops_5d": "5 日跌 ≥10%", "new_lows": "收盘创 52 周新低", "near_lows": "距 52 周新低 ≤3%"}
+    L = [f"# 筛选名单的前瞻收益（截至 {ft}）",
+         "每个交易日把四张候选名单记进 screen_log.csv，之后用同一只股票和 SPY 在 N 个交易日后的收盘算「相对 SPY 的超额收益」。",
+         "样本从 2026-10-29 开始积累，几十个样本之前别下结论；胜率 = 超额收益 > 0 的比例。", "",
+         "| 名单 | 命中 | 5日 n/均值/中位/胜率 | 21日 | 63日 | 126日 |", "|---|---|---|---|---|---|"]
+    for lst, row in summary.items():
+        cells = []
+        for n in HORIZONS:
+            if row[f"n{n}"]:
+                cells.append(f"{row[f'n{n}']} / {row[f'mean_x{n}'] * 100:+.1f}% / {row[f'median_x{n}'] * 100:+.1f}% / {row[f'win{n}'] * 100:.0f}%")
+            else:
+                cells.append("—")
+        L.append(f"| {zh[lst]} | {row['hits']} | " + " | ".join(cells) + " |")
+    done = [h for h in hits if h["x21"] is not None]
+    if done:
+        L += ["", "## 已满 21 个交易日的命中（最近 30 条）", "| 日期 | 名单 | 代码 | 5日超额 | 21日超额 | 63日超额 |", "|---|---|---|---|---|---|"]
+        for h in done[-30:]:
+            f = lambda v: "—" if v is None else f"{v * 100:+.1f}%"
+            L.append(f"| {h['date']} | {zh[h['list']]} | {h['t']} | {f(h['x5'])} | {f(h['x21'])} | {f(h['x63'])} |")
+    return "\n".join(L) + "\n"
+
+
 THERMO_COLS = ["date", "us10y", "us10y_5d_bp", "wti", "wti_1m", "dxy_1m", "smh_qqq_1m", "sp500_above_ma50", "ndx_above_ma50", "vix"]
 
 
@@ -574,6 +658,12 @@ def main(now_ny=None):
     sc = screens(set(sp500) | set(ndx), st, ft, names)
     th = thermometer(st, br, ft)
     append_thermo(th)
+    log_rows = log_screens(sc, st, ft)
+    hits, summary = screen_returns(log_rows, final, ft)
+    with open("screen_returns.json", "w", encoding="utf-8") as f:
+        json.dump({"as_of": ft, "summary": summary, "hits": hits}, f, ensure_ascii=False, separators=(",", ":"))
+    with open("screen_returns.md", "w", encoding="utf-8") as f:
+        f.write(render_screen_returns(summary, hits, ft))
     keep |= {e["t"] for key in ("drops", "drops_5d", "new_lows", "near_lows") for e in sc[key]}
     market = {"generated_at": gen, "final_through": ft,
               "assets": {t: rnd(st[t]) for t in sorted(keep) if st.get(t)},
@@ -588,7 +678,8 @@ def main(now_ny=None):
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
     print(f"market.json: {len(market['assets'])} assets; breadth sp500 {market['breadth']['sp500'] and market['breadth']['sp500']['n']}; "
-          f"screens drops {len(sc['drops'])} drops_5d {len(sc['drops_5d'])} new_lows {len(sc['new_lows'])} near_lows {len(sc['near_lows'])}; thermo {th}")
+          f"screens drops {len(sc['drops'])} drops_5d {len(sc['drops_5d'])} new_lows {len(sc['new_lows'])} near_lows {len(sc['near_lows'])}; "
+          f"screen log {len(log_rows)} hits; thermo {th}")
 
 
 if __name__ == "__main__":
