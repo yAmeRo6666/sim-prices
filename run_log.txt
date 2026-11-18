@@ -1,6 +1,3 @@
-
-1 Failed download:
-['META']: OperationalError('database is locked')
 last bar by download: {'QQQ': {'1y': ['2026-11-16', '2026-11-17', '2026-11-18'], '1mo': ['2026-11-16', '2026-11-17', '2026-11-18']}, 'XLK': {'1y': ['2026-11-16', '2026-11-17', '2026-11-18'], '1mo': ['2026-11-16', '2026-11-17', '2026-11-18']}, '^GSPC': {'1y': ['2026-11-16', '2026-11-17', '2026-11-18'], '1mo': ['2026-11-16', '2026-11-17', '2026-11-18']}, '2YY=F': {'1y': ['2026-11-13', '2026-11-16', '2026-11-17'], '1mo': ['2026-11-13', '2026-11-16', '2026-11-17']}, 'BTC-USD': {'1y': ['2026-11-16', '2026-11-17', '2026-11-18'], '1mo': ['2026-11-16', '2026-11-17', '2026-11-18']}}
 final_through 2026-11-18; 564 tickers; missing 0; stale core []
-market.json: 164 assets; breadth sp500 501; screens drops 2 drops_5d 30 new_lows 12 near_lows 12; screen log 591 hits; thermo {'date': '2026-11-18', 'us10y': 5.066, 'us10y_5d_bp': 6.8, 'wti': 82.18, 'wti_1m': -0.1927, 'dxy_1m': 0.0203, 'smh_qqq_1m': -0.0779, 'sp500_above_ma50': 0.56, 'ndx_above_ma50': 0.4257, 'vix': 24.52}
+market.json: 164 assets; breadth sp500 501; screens drops 2 drops_5d 30 new_lows 12 near_lows 12; screen log 591 hits; thermo {'date': '2026-11-18', 'us10y': 5.066, 'us10y_5d_bp': 6.8, 'wti': 82.19, 'wti_1m': -0.1926, 'dxy_1m': 0.0203, 'smh_qqq_1m': -0.0779, 'sp500_above_ma50': 0.56, 'ndx_above_ma50': 0.4257, 'vix': 24.54}
