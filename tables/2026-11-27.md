@@ -1,5 +1,5 @@
 # 行情数据表｜2026-11-27
-数据：Yahoo Finance，由 GitHub Actions 在 2026-11-28T02:57:08Z 生成；均为收盘后确认的日线数据。
+数据：Yahoo Finance，由 GitHub Actions 在 2026-11-28T03:29:26Z 生成；均为收盘后确认的日线数据。
 宽度只统计标普500 和纳指100 成分股（不是 NYSE/Nasdaq 全市场）。
 
 风险温度计：10年期 4.94%（5日 -12bp）｜WTI $83（1月 -19%）｜美元 1月 +1.8%｜SMH−QQQ 1月 -12.2pp｜标普500 高于50日线 63%｜VIX 23.8（历史见 thermo_history.csv）
